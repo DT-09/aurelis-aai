@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS tenants(id TEXT PRIMARY KEY,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,email TEXT NOT NULL UNIQUE,role TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS entitlements(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,capability TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(tenant_id,capability));
+CREATE TABLE IF NOT EXISTS credentials(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,key_hash TEXT NOT NULL,created_at TEXT NOT NULL,revoked_at TEXT);
+CREATE TABLE IF NOT EXISTS systems(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,name TEXT NOT NULL,state_json TEXT NOT NULL,baseline_json TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS changes(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,system_id TEXT NOT NULL,input_json TEXT NOT NULL,result_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS findings(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,change_id TEXT NOT NULL,code TEXT NOT NULL,severity TEXT NOT NULL,title TEXT NOT NULL,detail TEXT NOT NULL,remediation TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,resolved_at TEXT);
+CREATE TABLE IF NOT EXISTS regressions(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,test_id TEXT NOT NULL,name TEXT NOT NULL,control TEXT NOT NULL,source_finding_id TEXT,created_at TEXT NOT NULL,UNIQUE(tenant_id,test_id));
+CREATE TABLE IF NOT EXISTS remediation(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,change_id TEXT NOT NULL,action TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,completed_at TEXT);
+CREATE TABLE IF NOT EXISTS evidence(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,change_id TEXT NOT NULL,payload_json TEXT NOT NULL,sha256 TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS payments(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,provider TEXT NOT NULL,reference TEXT,amount_minor INTEGER,currency TEXT,status TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS audit_logs(id TEXT PRIMARY KEY,tenant_id TEXT,actor_id TEXT,event TEXT NOT NULL,object_type TEXT,object_id TEXT,metadata_json TEXT,created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_credentials_hash ON credentials(key_hash);
+CREATE INDEX IF NOT EXISTS idx_systems_tenant ON systems(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_changes_tenant ON changes(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_findings_tenant ON findings(tenant_id);

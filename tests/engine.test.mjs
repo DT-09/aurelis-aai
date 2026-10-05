@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {assess} from '../functions/_engine.js';
+const base={name:'CRM agent',model:'provider-a',instructions:'safe',tools:[{id:'crm',actions:['READ']}],data:[{id:'customer',sensitivity:'LOW',external:false}],memory:true,approval_boundaries:['tool:crm'],policies:['default']};
+test('safe change is approved',async()=>{const r=await assess(base,{...base,tools:[{id:'crm',actions:['READ','WRITE']} ]},[]);assert.equal(r.decision,'APPROVED');});
+test('authority increase without approval is blocked',async()=>{const r=await assess({...base,approval_boundaries:[]},{...base,approval_boundaries:[],tools:[{id:'crm',actions:['READ','WRITE']}]},[]);assert.equal(r.decision,'BLOCKED');assert.equal(r.findings[0].code,'AUTH-001');assert.ok(r.integrity_sha256.length===64);});
+test('sensitive external data is blocked',async()=>{const r=await assess(base,{...base,data:[{id:'customer',sensitivity:'HIGH',external:true}]},[]);assert.equal(r.decision,'BLOCKED');assert.equal(r.findings[0].code,'DATA-001');});
+test('regression corpus is included in plan',async()=>{const r=await assess(base,{...base,instructions:'changed'},[{test_id:'AUTH-001',name:'Historical authority regression',control:'TOOL_AUTHORITY_BOUNDARY'}]);assert.ok(r.tests.some(x=>x.name==='Historical authority regression'));});

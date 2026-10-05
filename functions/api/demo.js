@@ -1,0 +1,2 @@
+import {assess} from '../_engine.js';
+export async function onRequestGet(){const baseline={name:'Customer Operations Agent',model:'provider/model-v1',tools:[{id:'crm',actions:['READ']},{id:'email',actions:['SEND']}],data:[{id:'customer-pii'}],approval_boundaries:[]};const proposed={...baseline,tools:[{id:'crm',actions:['READ','WRITE']},{id:'email',actions:['SEND']}]};return Response.json(await assess(baseline,proposed));}

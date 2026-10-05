@@ -1,0 +1,1 @@
+{"name":"aurelis-aai","version":"2.0.0","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","check":"node --check functions/_engine.js && node --check functions/_auth.js && node --check functions/api/client.js && node --check functions/api/operator.js"},"devDependencies":{"wrangler":"^4.147.0"}}

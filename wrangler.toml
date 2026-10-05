@@ -1,0 +1,9 @@
+name = "aurelis-aai"
+compatibility_date = "2026-10-05"
+pages_build_output_dir = "public"
+
+# Create the D1 database first, then replace DATABASE_ID below with the ID returned by Wrangler.
+[[d1_databases]]
+binding = "DB"
+database_name = "aurelis-aai"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
