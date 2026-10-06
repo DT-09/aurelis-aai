@@ -1,2 +1,11 @@
-﻿name = "aurelis-aai"
+name = "aurelis-aai"
+compatibility_date = "2026-10-06"
 pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aurelis-aai"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+SESSION_TTL_SECONDS = "28800"
