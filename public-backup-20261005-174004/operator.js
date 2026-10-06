@@ -1,0 +1,1 @@
+$('provision').onclick=async()=>{const r=await fetch('/api/operator',{method:'POST',headers:{'X-AURELIS-OPERATOR-SECRET':$('secret').value,'content-type':'application/json'},body:JSON.stringify({action:'provision',company:$('company').value})});$('out').textContent=JSON.stringify(await r.json(),null,2)};function $(x){return document.getElementById(x)}

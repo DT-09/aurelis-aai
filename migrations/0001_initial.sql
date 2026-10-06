@@ -1,0 +1,14 @@
+CREATE TABLE IF NOT EXISTS tenants(id TEXT PRIMARY KEY,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS api_keys(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,key_hash TEXT NOT NULL UNIQUE,label TEXT,created_at TEXT NOT NULL,revoked_at TEXT);
+CREATE TABLE IF NOT EXISTS systems(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,name TEXT NOT NULL,type TEXT NOT NULL,version TEXT NOT NULL,environment TEXT NOT NULL,owner TEXT,status TEXT NOT NULL DEFAULT 'ACTIVE',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS controls(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,code TEXT NOT NULL,name TEXT NOT NULL,domain TEXT NOT NULL,description TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS assessments(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,system_id TEXT NOT NULL,status TEXT NOT NULL,result TEXT,score REAL,created_at TEXT NOT NULL,completed_at TEXT);
+CREATE TABLE IF NOT EXISTS findings(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,assessment_id TEXT NOT NULL,control_id TEXT,system_id TEXT NOT NULL,severity TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'OPEN',created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS evidence(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,assessment_id TEXT,system_id TEXT NOT NULL,type TEXT NOT NULL,source TEXT NOT NULL,payload TEXT NOT NULL,sha256 TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,system_id TEXT,kind TEXT NOT NULL,payload TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS decisions(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,system_id TEXT NOT NULL,action TEXT NOT NULL,decision TEXT NOT NULL,reason TEXT NOT NULL,risk REAL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS subscriptions(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,domain TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'ACTIVE',created_at TEXT NOT NULL,UNIQUE(tenant_id,domain));
+CREATE INDEX IF NOT EXISTS idx_systems_tenant ON systems(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_tenant ON evidence(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_findings_tenant ON findings(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);

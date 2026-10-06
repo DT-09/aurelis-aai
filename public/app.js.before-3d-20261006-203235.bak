@@ -1,0 +1,267 @@
+const canvas=document.getElementById('topology');const ctx=canvas.getContext('2d');let W,H,nodes=[];function resize(){W=canvas.width=innerWidth*devicePixelRatio;H=canvas.height=innerHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);W=innerWidth;H=innerHeight;nodes=Array.from({length:Math.min(70,Math.floor(W/18))},()=>({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.18,vy:(Math.random()-.5)*.18,r:Math.random()*1.5+.4}))}resize();addEventListener('resize',resize);function draw(){ctx.clearRect(0,0,W,H);for(const p of nodes){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>W)p.vx*=-1;if(p.y<0||p.y>H)p.vy*=-1}for(let i=0;i<nodes.length;i++){const a=nodes[i];for(let j=i+1;j<nodes.length;j++){const b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy);if(d<125){ctx.strokeStyle=`rgba(110,168,255,${.11*(1-d/125)})`;ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}}}for(const p of nodes){ctx.fillStyle='rgba(216,189,120,.45)';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill()}requestAnimationFrame(draw)}draw();
+const flow=document.querySelector('.flow');let mouseX=.5,mouseY=.5;document.addEventListener('pointermove',e=>{mouseX=e.clientX/innerWidth;mouseY=e.clientY/innerHeight;if(flow){flow.style.left=`${8+mouseX*72}%`;flow.style.top=`${10+mouseY*72}%`;flow.style.transition='left .35s ease-out, top .35s ease-out';}});document.querySelectorAll('.node').forEach(b=>b.addEventListener('click',()=>{const map={identity:['Identity','Establish the exact system and version acting before authority is evaluated.'],authority:['Authority','Determine which actions, tools, resources and environments are permitted.'],evidence:['Evidence','Bind the decision to policy, system version, outcome and provenance.'],control:['Control','Return an explicit runtime state: allow, constrain, escalate or deny.']};const x=map[b.dataset.panel];document.getElementById('heroInspect').innerHTML=`<b>${x[0]}</b><span>${x[1]}</span>`}));
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.style.opacity=1}),{threshold:.08});document.querySelectorAll('.section').forEach(e=>{e.style.opacity=0; e.style.transition='opacity .7s ease';io.observe(e)});
+
+
+const demoScenarios={
+ normal:{decision:'ALLOW',basis:'Identity verified and requested action remains inside the active policy boundary.',identity:'VERIFIED',authority:'ALLOWED',policy:'SATISFIED',outcome:'OBSERVED',evidence:'BOUND',log:'Identity → authority → policy → execution → evidence. No control exception detected.'},
+ injection:{decision:'DENY',basis:'Untrusted input attempted to alter authority; the control boundary remains outside the model.',identity:'VERIFIED',authority:'BLOCKED',policy:'CONFLICT',outcome:'NOT RELEASED',evidence:'BOUND',log:'Input classified as untrusted → authority change rejected → action prevented → denial recorded.'},
+ identity:{decision:'ESCALATE',basis:'Observed actor does not match the permitted principal; execution requires explicit review.',identity:'MISMATCH',authority:'HELD',policy:'REVIEW',outcome:'NOT RELEASED',evidence:'BOUND',log:'Identity mismatch → authority held → human review required → evidence record created.'}
+};
+let selectedScenario='normal';
+document.querySelectorAll('.scenario').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.scenario').forEach(x=>x.classList.remove('active'));b.classList.add('active');selectedScenario=b.dataset.scenario;}));
+document.getElementById('runDemo')?.addEventListener('click',()=>{const d=demoScenarios[selectedScenario];const id='AUR-'+Math.random().toString(36).slice(2,8).toUpperCase();document.querySelector('.result-state').textContent='EVALUATED';document.getElementById('resultDecision').textContent=d.decision;document.getElementById('resultBasis').textContent=d.basis;document.getElementById('resultIdentity').textContent=d.identity;document.getElementById('resultAuthority').textContent=d.authority;document.getElementById('resultPolicy').textContent=d.policy;document.getElementById('resultOutcome').textContent=d.outcome;document.getElementById('resultEvidence').textContent=d.evidence;document.getElementById('resultRun').textContent=id;document.getElementById('resultLog').textContent=d.log;});
+
+/* AURELIS CONTROL FABRIC — NODE-DRIVEN ORBIT FIX */
+(() => {
+  const boot = () => {
+    const all = [...document.querySelectorAll("*")];
+
+    const findNode = (name) => all.find(el =>
+      el.children.length < 8 &&
+      el.textContent.trim().toLowerCase() === name &&
+      (() => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      })()
+    );
+
+    const nodes = {
+      identity: findNode("identity"),
+      authority: findNode("authority"),
+      evidence: findNode("evidence"),
+      control: findNode("control")
+    };
+
+    if (Object.values(nodes).filter(Boolean).length < 3) return;
+
+    /* Find the smallest common visible ancestor containing the fabric nodes. */
+    let fabric = null;
+    for (let el = nodes.control; el && el !== document.body; el = el.parentElement) {
+      const r = el.getBoundingClientRect();
+      if (
+        r.width > 250 &&
+        r.height > 180 &&
+        Object.values(nodes).every(n => n && el.contains(n))
+      ) {
+        fabric = el;
+        if (r.width < 1200 && r.height < 900) break;
+      }
+    }
+
+    if (!fabric) return;
+
+    /* Locate the existing blue moving point. */
+    const candidates = [...fabric.querySelectorAll("*")].filter(el => {
+      const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      if (r.width > 40 || r.height > 40 || r.width === 0 || r.height === 0) return false;
+      return (
+        /rgb\(.*?,\s*1\)/.test(s.backgroundColor) ||
+        /blue|#.*(4|5|6|7|8|9|a|b|c|d|e|f)/i.test(s.backgroundColor)
+      );
+    });
+
+    let dot =
+      fabric.querySelector(".fabric-dot,.fabric-point,.control-dot,.control-point,.orbit-dot,.orb,.particle,.node-particle") ||
+      candidates.sort((a,b) => {
+        const ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+        return (ar.width*ar.height)-(br.width*br.height);
+      })[0];
+
+    if (!dot) return;
+
+    dot.style.position = "absolute";
+    dot.style.pointerEvents = "none";
+    dot.style.zIndex = "20";
+    dot.style.willChange = "transform";
+
+    const state = {
+      selected: null,
+      lastInteraction: performance.now(),
+      angle: Math.random() * Math.PI * 2,
+      radius: 0,
+      x: 0,
+      y: 0,
+      targetX: 0,
+      targetY: 0
+    };
+
+    const center = () => {
+      const r = fabric.getBoundingClientRect();
+      return {
+        x: r.width / 2,
+        y: r.height / 2,
+        w: r.width,
+        h: r.height
+      };
+    };
+
+    const nodeCenter = (el) => {
+      const fr = fabric.getBoundingClientRect();
+      const nr = el.getBoundingClientRect();
+      return {
+        x: nr.left + nr.width / 2 - fr.left,
+        y: nr.top + nr.height / 2 - fr.top
+      };
+    };
+
+    const clampInsideFabric = (x, y) => {
+      const fr = fabric.getBoundingClientRect();
+      const pad = Math.max(24, Math.min(fr.width, fr.height) * 0.055);
+      return {
+        x: Math.max(pad, Math.min(fr.width - pad, x)),
+        y: Math.max(pad, Math.min(fr.height - pad, y))
+      };
+    };
+
+    const orbitalMean = () => {
+      const c = center();
+      const pts = Object.values(nodes)
+        .filter(Boolean)
+        .map(nodeCenter);
+
+      const mx = pts.reduce((s,p) => s+p.x, 0) / pts.length;
+      const my = pts.reduce((s,p) => s+p.y, 0) / pts.length;
+
+      const spread = pts.reduce(
+        (s,p) => s + Math.hypot(p.x-mx,p.y-my), 0
+      ) / pts.length;
+
+      const orbit = Math.max(
+        20,
+        Math.min(spread * 0.62, Math.min(c.w,c.h) * 0.22)
+      );
+
+      state.radius = orbit;
+
+      return clampInsideFabric(
+        mx + Math.cos(state.angle) * orbit,
+        my + Math.sin(state.angle) * orbit * 0.72
+      );
+    };
+
+    const selectNode = (name) => {
+      const n = nodes[name];
+      if (!n) return;
+
+      state.selected = name;
+      state.lastInteraction = performance.now();
+
+      const p = nodeCenter(n);
+      const c = center();
+
+      /* Approach the selected node, but never leave the fabric. */
+      const dx = p.x - c.x;
+      const dy = p.y - c.y;
+      const len = Math.max(1, Math.hypot(dx,dy));
+
+      const inset = Math.min(34, Math.max(18, Math.min(c.w,c.h)*0.045));
+
+      state.targetX = p.x - (dx/len) * inset;
+      state.targetY = p.y - (dy/len) * inset;
+
+      const q = clampInsideFabric(state.targetX,state.targetY);
+      state.targetX = q.x;
+      state.targetY = q.y;
+    };
+
+    /* Clicking/selecting a node is the ONLY thing that activates following. */
+    Object.entries(nodes).forEach(([name,el]) => {
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        selectNode(name);
+      }, true);
+
+      el.addEventListener("pointerdown", e => {
+        selectNode(name);
+      }, true);
+    });
+
+    /*
+      While a node is selected, moving the pointer toward another node
+      moves the point toward THAT NODE — not to the raw mouse coordinates.
+      Outside the four nodes, the point remains where it is.
+    */
+    fabric.addEventListener("pointermove", e => {
+      if (!state.selected) return;
+
+      const fr = fabric.getBoundingClientRect();
+      const mx = e.clientX - fr.left;
+      const my = e.clientY - fr.top;
+
+      let nearest = null;
+      let distance = Infinity;
+
+      Object.entries(nodes).forEach(([name,el]) => {
+        const p = nodeCenter(el);
+        const d = Math.hypot(mx-p.x,my-p.y);
+        if (d < distance) {
+          distance = d;
+          nearest = name;
+        }
+      });
+
+      const activationRadius = Math.max(70, Math.min(fr.width,fr.height)*0.16);
+
+      if (nearest && distance <= activationRadius) {
+        selectNode(nearest);
+      }
+
+      state.lastInteraction = performance.now();
+    }, true);
+
+    /* Clicking empty fabric releases node-follow mode. */
+    fabric.addEventListener("click", e => {
+      if (!e.target.closest || !e.target.closest("*")) return;
+    }, false);
+
+    let last = performance.now();
+
+    const frame = now => {
+      const dt = Math.min(40, now-last);
+      last = now;
+
+      const idle = now - state.lastInteraction > 650;
+
+      if (idle || !state.selected) {
+        state.angle += dt * 0.00032;
+
+        const p = orbitalMean();
+        state.targetX = p.x;
+        state.targetY = p.y;
+      }
+
+      /*
+        Critically: never use pointer coordinates as the particle position.
+        The pointer only chooses which of the four nodes is active.
+      */
+      state.x += (state.targetX-state.x) * Math.min(1, dt*0.008);
+      state.y += (state.targetY-state.y) * Math.min(1, dt*0.008);
+
+      const q = clampInsideFabric(state.x,state.y);
+      state.x=q.x;
+      state.y=q.y;
+
+      dot.style.left = "0px";
+      dot.style.top = "0px";
+      dot.style.transform = `translate3d(${q.x}px,${q.y}px,0) translate(-50%,-50%)`;
+
+      requestAnimationFrame(frame);
+    };
+
+    const initial = orbitalMean();
+    state.x = state.targetX = initial.x;
+    state.y = state.targetY = initial.y;
+
+    requestAnimationFrame(frame);
+
+    console.log("[AURELIS] Control Fabric node-driven orbit active.");
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot, {once:true});
+  } else {
+    boot();
+  }
+})();

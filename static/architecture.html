@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AAI Architecture</title><link rel="stylesheet" href="/app.css"></head><body><nav><a class="brand" href="/">AAI</a><div><a class="button small" href="/access.html">Control Plane</a></div></nav><main style="padding-top:60px"><div class="eyebrow">SYSTEM ARCHITECTURE</div><h1 style="font-size:60px">Engine + infrastructure + control plane.</h1><p class="lead">AAI is designed as an infrastructure primitive. The UI is one consumer of the engine, not the product boundary.</p><div class="grid"><article><b>APPLICATION LAYER</b><h3>Agents · Models · Applications · Workflows</h3></article><article><b>AAI ENGINE</b><h3>Identity → Authority → Policy → Risk → Control → Decision</h3></article><article><b>INFRASTRUCTURE</b><h3>Evidence · Events · Audit · Integrations · API · Webhooks</h3></article><article><b>CONTROL PLANE</b><h3>Operators · Security · Risk · Engineering</h3></article></div><section class="section"><pre>POST /api/assurance/evaluate
+POST /api/assessment
+POST /api/decision
+GET  /api/evidence
+GET  /api/findings
+GET  /api/engine</pre></section></main></body></html>

@@ -1,0 +1,857 @@
+------formdata-undici-027805525582
+Content-Disposition: form-data; name="metadata"
+
+{"main_module":"functionsWorker-0.9327192571368652.js"}
+------formdata-undici-027805525582
+Content-Disposition: form-data; name="functionsWorker-0.9327192571368652.js"; filename="functionsWorker-0.9327192571368652.js"
+Content-Type: application/javascript+module
+
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// _core.js
+var enc = new TextEncoder();
+var now = /* @__PURE__ */ __name(() => (/* @__PURE__ */ new Date()).toISOString(), "now");
+var id = /* @__PURE__ */ __name((p) => `${p}_${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`, "id");
+async function sha256(s) {
+  const b = await crypto.subtle.digest("SHA-256", enc.encode(s));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+__name(sha256, "sha256");
+async function hashSecret(s) {
+  return sha256(s);
+}
+__name(hashSecret, "hashSecret");
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+}
+__name(json, "json");
+function cookie(name, value, maxAge) {
+  return `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+}
+__name(cookie, "cookie");
+function getCookie(req, name) {
+  const c = req.headers.get("Cookie") || "";
+  const m = c.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+  return m?.[1] || null;
+}
+__name(getCookie, "getCookie");
+async function requireSession(req, env, roles = []) {
+  const sid = getCookie(req, "aurelis_session");
+  if (!sid) return null;
+  const r = await env.DB.prepare("SELECT * FROM sessions WHERE id=? AND expires_at>?").bind(sid, now()).first();
+  if (!r) return null;
+  if (roles.length && !roles.includes(r.role)) return null;
+  return r;
+}
+__name(requireSession, "requireSession");
+async function audit(env, tenant, actor, event, payload) {
+  await env.DB.prepare("INSERT INTO audit_events VALUES(?,?,?,?,?,?)").bind(id("aud"), tenant, actor, event, JSON.stringify(payload), now()).run();
+}
+__name(audit, "audit");
+
+// _auth.js
+async function login(req, env) {
+  const b = await req.json();
+  const u = await env.DB.prepare("SELECT * FROM users WHERE email=?").bind(String(b.email || "").toLowerCase()).first();
+  if (!u) return json({ error: "INVALID_CREDENTIALS" }, 401);
+  if (await hashSecret(String(b.password || "")) !== u.pass_hash) return json({ error: "INVALID_CREDENTIALS" }, 401);
+  const sid = id("ses"), exp = new Date(Date.now() + 1e3 * 60 * 60 * 12).toISOString();
+  await env.DB.prepare("INSERT INTO sessions VALUES(?,?,?,?,?,?)").bind(sid, u.id, u.tenant_id, u.role, exp, now()).run();
+  await audit(env, u.tenant_id, u.id, "AUTH_LOGIN", {});
+  return new Response(JSON.stringify({ ok: true, role: u.role, tenantId: u.tenant_id }), { headers: { "content-type": "application/json", "set-cookie": cookie("aurelis_session", sid, 60 * 60 * 12) } });
+}
+__name(login, "login");
+async function logout(req, env) {
+  const sid = getCookie(req, "aurelis_session");
+  if (sid) await env.DB.prepare("DELETE FROM sessions WHERE id=?").bind(sid).run();
+  return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json", "set-cookie": cookie("aurelis_session", "", 0) } });
+}
+__name(logout, "logout");
+async function me(req, env) {
+  const s = await requireSession(req, env);
+  if (!s) return json({ authenticated: false }, 401);
+  const t = await env.DB.prepare("SELECT id,name,status FROM tenants WHERE id=?").bind(s.tenant_id).first();
+  return json({ authenticated: true, userId: s.user_id, tenantId: s.tenant_id, role: s.role, tenant: t });
+}
+__name(me, "me");
+
+// api/auth.js
+async function onRequestPost({ request, env }) {
+  const p = new URL(request.url).pathname;
+  if (p.endsWith("/login")) return login(request, env);
+  return logout(request, env);
+}
+__name(onRequestPost, "onRequestPost");
+async function onRequestGet({ request, env }) {
+  return me(request, env);
+}
+__name(onRequestGet, "onRequestGet");
+
+// _engine.js
+var ENGINE_VERSION = "aurelis-change-engine-3.0.0";
+var domains = ["identity", "spend", "incident", "recovery", "supply_chain", "vendor_risk", "compliance", "data_access", "ai_trust", "assurance", "observability"];
+var norm = /* @__PURE__ */ __name((s) => ({ model: s.model || "unspecified", instructions: s.instructions || "", tools: s.tools || [], data: s.data || [], controls: s.controls || [] }), "norm");
+function map(s) {
+  const x = norm(s);
+  const m = /* @__PURE__ */ new Map();
+  m.set("model", x.model);
+  m.set("instructions", x.instructions);
+  for (const t of x.tools) m.set(`tool:${t.name}`, JSON.stringify(t));
+  for (const d of x.data) m.set(`data:${d.name}`, JSON.stringify(d));
+  for (const c of x.controls) m.set(`control:${c.name}`, JSON.stringify(c));
+  return m;
+}
+__name(map, "map");
+function diff(a, b) {
+  const A = map(a), B = map(b), changes = [];
+  for (const [k, v] of A) if (!B.has(k)) changes.push({ path: k, type: "REMOVED", from: v, to: null });
+  for (const [k, v] of B) if (!A.has(k)) changes.push({ path: k, type: "ADDED", from: null, to: v });
+  for (const [k, v] of A) if (B.has(k) && B.get(k) !== v) changes.push({ path: k, type: "MODIFIED", from: v, to: B.get(k) });
+  return changes;
+}
+__name(diff, "diff");
+function parse(v) {
+  try {
+    return JSON.parse(v);
+  } catch {
+    return {};
+  }
+}
+__name(parse, "parse");
+function analyzeImpact(changes) {
+  const affected = /* @__PURE__ */ new Set(), tests = [], findings = [];
+  let authority = false, sensitive = false, external = false, approval = false;
+  for (const c of changes) {
+    affected.add(c.path);
+    const before = parse(c.from), after = parse(c.to);
+    if (c.path.startsWith("tool:")) {
+      const bw = !!before.write || !!before.delete || !!before.send;
+      const aw = !!after.write || !!after.delete || !!after.send;
+      if (aw && !bw) authority = true;
+      if (after.external) external = true;
+      tests.push({ name: `Tool authority validation \u2014 ${c.path.slice(5)}`, category: "AUTHORITY", reason: "Tool capability changed" });
+    }
+    if (c.path.startsWith("data:")) {
+      sensitive = true;
+      tests.push({ name: `Data boundary validation \u2014 ${c.path.slice(5)}`, category: "DATA_ACCESS", reason: "Data boundary changed" });
+    }
+    if (c.path.startsWith("control:")) {
+      if (after.requiredApproval === false) approval = true;
+      tests.push({ name: `Control integrity validation \u2014 ${c.path.slice(8)}`, category: "CONTROL", reason: "Control definition changed" });
+    }
+    if (c.path === "instructions") {
+      tests.push({ name: "Instruction / policy regression validation", category: "INSTRUCTION", reason: "Instruction layer changed" });
+    }
+    if (c.path === "model") tests.push({ name: "Model behavior regression validation", category: "MODEL", reason: "Model provider/version changed" });
+  }
+  if (authority) findings.push({ severity: "HIGH", title: "Authority boundary increased", description: "A changed tool now grants a capability that was not present in the baseline." });
+  if (sensitive && external) findings.push({ severity: "HIGH", title: "Sensitive-data external action path changed", description: "A changed system combines sensitive data access with an external-effect capability." });
+  if (approval) findings.push({ severity: "CRITICAL", title: "Approval control weakened", description: "A control change removes a previously required human approval boundary." });
+  if (!tests.length) tests.push({ name: "Baseline consistency validation", category: "BASELINE", reason: "No specialized change class matched" });
+  return { affected: [...affected], tests, findings, flags: { authority, sensitive, external, approval } };
+}
+__name(analyzeImpact, "analyzeImpact");
+async function executeChange({ db, tenantId, systemId, fromVersion, toVersion, actorId }) {
+  const changes = diff(JSON.parse(fromVersion.snapshot_json), JSON.parse(toVersion.snapshot_json));
+  const impact = analyzeImpact(changes);
+  const changeId = id("chg");
+  let decision = impact.findings.length ? "BLOCKED" : "APPROVED";
+  const created = now();
+  await db.prepare("INSERT INTO changes VALUES(?,?,?,?,?,?,?,?)").bind(changeId, tenantId, systemId, fromVersion.id, toVersion.id, JSON.stringify(changes), JSON.stringify(impact), decision, created).run();
+  for (const t of impact.tests) {
+    const fail = impact.findings.some((f) => f.severity === "CRITICAL" && t.category === "CONTROL") || impact.findings.some((f) => f.severity === "HIGH" && ["AUTHORITY", "DATA_ACCESS"].includes(t.category));
+    await db.prepare("INSERT INTO tests VALUES(?,?,?,?,?,?,?)").bind(id("tst"), changeId, t.name, t.category, fail ? "FAIL" : "PASS", JSON.stringify({ reason: t.reason, executed: true }), created).run();
+  }
+  for (const f of impact.findings) {
+    await db.prepare("INSERT INTO findings VALUES(?,?,?,?,?,?,?)").bind(id("fnd"), changeId, f.severity, f.title, f.description, "OPEN", created).run();
+  }
+  const reason = impact.findings.length ? impact.findings.map((f) => f.title).join("; ") : "All selected validations passed for the observed change.";
+  const decisionId = id("dec");
+  await db.prepare("INSERT INTO decisions VALUES(?,?,?,?,?,?)").bind(decisionId, changeId, decision, reason, ENGINE_VERSION, created).run();
+  const payload = { changeId, systemId, fromVersion: fromVersion.version, toVersion: toVersion.version, changes, impact, decision, engineVersion: ENGINE_VERSION, createdAt: created };
+  const hash = await sha256(JSON.stringify(payload));
+  await db.prepare("INSERT INTO evidence VALUES(?,?,?,?,?,?,?)").bind(id("evd"), tenantId, changeId, "RELEASE_DECISION", JSON.stringify({ ...payload, integrityHash: hash }), hash, created).run();
+  return { changeId, decision, reason, impact, tests: impact.tests, findings: impact.findings, integrityHash: hash };
+}
+__name(executeChange, "executeChange");
+
+// api/demo.js
+async function onRequestGet2() {
+  const baseline = { model: "support-model-v17", tools: [{ name: "CRM", read: true }], data: [{ name: "Customer PII" }], controls: [{ name: "Ticket modification approval", requiredApproval: true }] };
+  const changed = { ...baseline, tools: [{ name: "CRM", read: true, write: true }] };
+  const changes = diff(baseline, changed), impact = analyzeImpact(changes);
+  return json({ engine: ENGINE_VERSION, controlledDemo: true, baseline, changed, changes, impact, decision: impact.findings.length ? "BLOCKED" : "APPROVED" });
+}
+__name(onRequestGet2, "onRequestGet");
+
+// api/health.js
+async function onRequestGet3({ env }) {
+  let db = "ok";
+  try {
+    await env.DB.prepare("SELECT 1").first();
+  } catch {
+    db = "unavailable";
+  }
+  return json({ service: "AURELIS AAI", engine: "aurelis-change-engine-3.0.0", status: db === "ok" ? "operational" : "degraded", database: db, time: now() });
+}
+__name(onRequestGet3, "onRequestGet");
+
+// api/setup.js
+async function onRequestPost2({ request, env }) {
+  const b = await request.json();
+  const count = await env.DB.prepare("SELECT COUNT(*) c FROM users").first();
+  if (Number(count.c) > 0) return json({ error: "ALREADY_INITIALIZED" }, 409);
+  if (!b.email || !b.password || !b.name) return json({ error: "email,password,name required" }, 400);
+  const tenant = id("ten"), user = id("usr");
+  await env.DB.batch([env.DB.prepare("INSERT INTO tenants VALUES(?,?,?,?)").bind(tenant, b.name, "ACTIVE", now()), env.DB.prepare("INSERT INTO users VALUES(?,?,?,?,?,?)").bind(user, tenant, String(b.email).toLowerCase(), "OWNER", await hashSecret(b.password), now()), env.DB.prepare("INSERT INTO entitlements VALUES(?,?,?)").bind(tenant, "assurance", "ACTIVE")]);
+  return json({ ok: true, tenantId: tenant, userId: user, note: "Store these credentials securely. This setup endpoint is disabled after initialization." });
+}
+__name(onRequestPost2, "onRequestPost");
+
+// api/client.js
+async function onRequest({ request, env }) {
+  const s = await requireSession(request, env, ["OWNER", "OPERATOR", "CLIENT"]);
+  if (!s) return json({ error: "AUTHENTICATION_REQUIRED" }, 401);
+  if (request.method === "GET") {
+    const t = await env.DB.prepare("SELECT id,name,status FROM tenants WHERE id=?").bind(s.tenant_id).first();
+    const e = await env.DB.prepare('SELECT domain,status FROM entitlements WHERE tenant_id=? AND status="ACTIVE"').bind(s.tenant_id).all();
+    const c = await env.DB.prepare("SELECT COUNT(*) c FROM changes WHERE tenant_id=?").bind(s.tenant_id).first();
+    return json({ tenant: t, entitlements: e.results, changes: Number(c.c) });
+  }
+  return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+}
+__name(onRequest, "onRequest");
+
+// api/engine.js
+var parse2 = /* @__PURE__ */ __name(async (r) => {
+  try {
+    return await r.json();
+  } catch {
+    return {};
+  }
+}, "parse");
+async function entitled(env, tenant, domain) {
+  const r = await env.DB.prepare('SELECT 1 FROM entitlements WHERE tenant_id=? AND domain=? AND status="ACTIVE"').bind(tenant, domain).first();
+  return !!r;
+}
+__name(entitled, "entitled");
+async function onRequest2({ request, env }) {
+  const s = await requireSession(request, env, ["OWNER", "OPERATOR", "CLIENT"]);
+  if (!s) return json({ error: "AUTHENTICATION_REQUIRED" }, 401);
+  if (s.role === "CLIENT" && !await entitled(env, s.tenant_id, "assurance")) return json({ error: "ENTITLEMENT_REQUIRED", domain: "assurance" }, 403);
+  const u = new URL(request.url), p = u.pathname.split("/").filter(Boolean);
+  const action = p[2] || "";
+  if (action === "domains") return json({ domains });
+  if (action === "systems" && request.method === "GET") {
+    const rows = await env.DB.prepare("SELECT * FROM systems WHERE tenant_id=? ORDER BY created_at DESC").bind(s.tenant_id).all();
+    return json({ systems: rows.results });
+  }
+  if (action === "systems" && request.method === "POST") {
+    const b = await parse2(request);
+    const sid = id("sys"), vid = id("ver"), v = b.version || "1.0.0", snap = JSON.stringify(b.snapshot || {});
+    await env.DB.batch([env.DB.prepare("INSERT INTO systems VALUES(?,?,?,?,?)").bind(sid, s.tenant_id, b.name || "Untitled AI System", b.environment || "production", now()), env.DB.prepare("INSERT INTO system_versions VALUES(?,?,?,?,?)").bind(vid, sid, v, snap, now())]);
+    await audit(env, s.tenant_id, s.user_id, "SYSTEM_REGISTERED", { systemId: sid, version: v });
+    return json({ systemId: sid, versionId: vid });
+  }
+  if (action === "systems" && p[3] && request.method === "POST") {
+    const sid = p[3], b = await parse2(request);
+    const own = await env.DB.prepare("SELECT * FROM systems WHERE id=? AND tenant_id=?").bind(sid, s.tenant_id).first();
+    if (!own) return json({ error: "NOT_FOUND" }, 404);
+    const latest = await env.DB.prepare("SELECT * FROM system_versions WHERE system_id=? ORDER BY created_at DESC LIMIT 1").bind(sid).first();
+    const vid = id("ver");
+    await env.DB.prepare("INSERT INTO system_versions VALUES(?,?,?,?,?)").bind(vid, sid, b.version || `v${Date.now()}`, JSON.stringify(b.snapshot || {}), now()).run();
+    const result = await executeChange({ db: env.DB, tenantId: s.tenant_id, systemId: sid, fromVersion: latest, toVersion: { id: vid, version: b.version || `v${Date.now()}`, snapshot_json: JSON.stringify(b.snapshot || {}) }, actorId: s.user_id });
+    await audit(env, s.tenant_id, s.user_id, "CHANGE_EVALUATED", { changeId: result.changeId, decision: result.decision });
+    return json(result);
+  }
+  if (action === "changes" && request.method === "GET") {
+    const rows = await env.DB.prepare("SELECT * FROM changes WHERE tenant_id=? ORDER BY created_at DESC LIMIT 100").bind(s.tenant_id).all();
+    return json({ changes: rows.results.map((x) => ({ ...x, change_json: JSON.parse(x.change_json), impact_json: JSON.parse(x.impact_json) })) });
+  }
+  if (action === "evidence" && p[3]) {
+    const r = await env.DB.prepare("SELECT * FROM evidence WHERE id=? AND tenant_id=?").bind(p[3], s.tenant_id).first();
+    return r ? json({ ...r, payload_json: JSON.parse(r.payload_json) }) : json({ error: "NOT_FOUND" }, 404);
+  }
+  if (action === "retest" && p[3] && request.method === "POST") {
+    const ch = await env.DB.prepare("SELECT * FROM changes WHERE id=? AND tenant_id=?").bind(p[3], s.tenant_id).first();
+    if (!ch) return json({ error: "NOT_FOUND" }, 404);
+    const b = await parse2(request);
+    const sys = await env.DB.prepare("SELECT * FROM systems WHERE id=? AND tenant_id=?").bind(ch.system_id, s.tenant_id).first();
+    const latest = await env.DB.prepare("SELECT * FROM system_versions WHERE system_id=? ORDER BY created_at DESC LIMIT 1").bind(ch.system_id).first();
+    if (!sys || !latest) return json({ error: "SYSTEM_NOT_FOUND" }, 404);
+    const result = await executeChange({ db: env.DB, tenantId: s.tenant_id, systemId: ch.system_id, fromVersion: { id: ch.to_version_id, version: latest.version, snapshot_json: latest.snapshot_json }, toVersion: { id: latest.id, version: latest.version, snapshot_json: JSON.stringify(b.snapshot || JSON.parse(latest.snapshot_json)) }, actorId: s.user_id });
+    return json({ ...result, retestOf: p[3] });
+  }
+  if (action === "remediate" && p[3] && request.method === "POST") {
+    const f = await env.DB.prepare("SELECT * FROM findings WHERE id=?").bind(p[3]).first();
+    if (!f) return json({ error: "NOT_FOUND" }, 404);
+    await env.DB.prepare('UPDATE findings SET status="REMEDIATED" WHERE id=?').bind(p[3]).run();
+    await env.DB.prepare("INSERT INTO remediations VALUES(?,?,?,?,?)").bind(id("rem"), p[3], JSON.stringify(await parse2(request)), "APPLIED", now()).run();
+    await env.DB.prepare("INSERT INTO regression_tests VALUES(?,?,?,?,?,?)").bind(id("reg"), s.tenant_id, p[3], f.title, JSON.stringify({ description: f.description }), now()).run();
+    return json({ ok: true, regressionCreated: true });
+  }
+  return json({ error: "UNKNOWN_ENGINE_ROUTE" }, 404);
+}
+__name(onRequest2, "onRequest");
+
+// api/invite.js
+async function onRequest3({ request, env }) {
+  if (request.method === "GET") {
+    const token = new URL(request.url).searchParams.get("token");
+    if (!token) return json({ error: "TOKEN_REQUIRED" }, 400);
+    const h2 = await sha256(token), r = await env.DB.prepare("SELECT tenant_id,email,expires_at,used_at FROM invites WHERE token_hash=?").bind(h2).first();
+    if (!r || r.used_at || r.expires_at < now()) return json({ valid: false }, 400);
+    const t = await env.DB.prepare("SELECT name FROM tenants WHERE id=?").bind(r.tenant_id).first();
+    return json({ valid: true, email: r.email, tenantName: t?.name });
+  }
+  const b = await request.json();
+  const h = await sha256(b.token || "");
+  const inv = await env.DB.prepare("SELECT * FROM invites WHERE token_hash=?").bind(h).first();
+  if (!inv || inv.used_at || inv.expires_at < now()) return json({ error: "INVALID_INVITATION" }, 400);
+  if (!b.password) return json({ error: "password required" }, 400);
+  const uid = id("usr"), sid = id("ses"), exp = new Date(Date.now() + 12 * 36e5).toISOString();
+  await env.DB.batch([env.DB.prepare("INSERT INTO users VALUES(?,?,?,?,?,?)").bind(uid, inv.tenant_id, inv.email, "CLIENT", await hashSecret(b.password), now()), env.DB.prepare("UPDATE invites SET used_at=? WHERE id=?").bind(now(), inv.id), env.DB.prepare("INSERT INTO sessions VALUES(?,?,?,?,?,?)").bind(sid, uid, inv.tenant_id, "CLIENT", exp, now())]);
+  return new Response(JSON.stringify({ ok: true, tenantId: inv.tenant_id }), { headers: { "content-type": "application/json", "set-cookie": cookie("aurelis_session", sid, 43200) } });
+}
+__name(onRequest3, "onRequest");
+
+// api/operator.js
+async function onRequest4({ request, env }) {
+  const s = await requireSession(request, env, ["OWNER", "OPERATOR"]);
+  if (!s) return json({ error: "OPERATOR_AUTH_REQUIRED" }, 403);
+  const b = await request.json().catch(() => ({}));
+  if (request.method === "POST" && b.action === "create-client") {
+    const tenant = id("ten"), email = String(b.email || "").toLowerCase(), name = b.name || "Client";
+    if (!email) return json({ error: "email required" }, 400);
+    const token = crypto.randomUUID() + crypto.randomUUID(), hash = await sha256(token);
+    await env.DB.batch([env.DB.prepare("INSERT INTO tenants VALUES(?,?,?,?)").bind(tenant, name, "ACTIVE", now()), env.DB.prepare("INSERT INTO invites VALUES(?,?,?,?,?,?)").bind(id("inv"), tenant, email, hash, new Date(Date.now() + 7 * 864e5).toISOString(), null, now())]);
+    for (const d of b.domains || ["assurance"]) await env.DB.prepare("INSERT INTO entitlements VALUES(?,?,?)").bind(tenant, d, "ACTIVE").run();
+    await audit(env, tenant, s.user_id, "CLIENT_PROVISIONED", { email });
+    return json({ tenantId: tenant, inviteToken: token, invitePath: `/access.html?invite=${encodeURIComponent(token)}`, note: "Send the invitation path to the client; token is shown once." });
+  }
+  if (request.method === "GET") {
+    const ts = await env.DB.prepare("SELECT id,name,status,created_at FROM tenants ORDER BY created_at DESC").all();
+    return json({ tenants: ts.results });
+  }
+  return json({ error: "UNKNOWN_OPERATOR_ROUTE" }, 404);
+}
+__name(onRequest4, "onRequest");
+
+// ../.wrangler/tmp/pages-azcR94/functionsRoutes-0.15411549598745522.mjs
+var routes = [
+  {
+    routePath: "/api/auth",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet]
+  },
+  {
+    routePath: "/api/auth",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost]
+  },
+  {
+    routePath: "/api/demo",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet2]
+  },
+  {
+    routePath: "/api/health",
+    mountPath: "/api",
+    method: "GET",
+    middlewares: [],
+    modules: [onRequestGet3]
+  },
+  {
+    routePath: "/api/setup",
+    mountPath: "/api",
+    method: "POST",
+    middlewares: [],
+    modules: [onRequestPost2]
+  },
+  {
+    routePath: "/api/client",
+    mountPath: "/api",
+    method: "",
+    middlewares: [],
+    modules: [onRequest]
+  },
+  {
+    routePath: "/api/engine",
+    mountPath: "/api",
+    method: "",
+    middlewares: [],
+    modules: [onRequest2]
+  },
+  {
+    routePath: "/api/invite",
+    mountPath: "/api",
+    method: "",
+    middlewares: [],
+    modules: [onRequest3]
+  },
+  {
+    routePath: "/api/operator",
+    mountPath: "/api",
+    method: "",
+    middlewares: [],
+    modules: [onRequest4]
+  }
+];
+
+// ../../../../../AppData/Roaming/npm/node_modules/wrangler/node_modules/path-to-regexp/dist.es2015/index.js
+function lexer(str) {
+  var tokens = [];
+  var i = 0;
+  while (i < str.length) {
+    var char = str[i];
+    if (char === "*" || char === "+" || char === "?") {
+      tokens.push({ type: "MODIFIER", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "\\") {
+      tokens.push({ type: "ESCAPED_CHAR", index: i++, value: str[i++] });
+      continue;
+    }
+    if (char === "{") {
+      tokens.push({ type: "OPEN", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === "}") {
+      tokens.push({ type: "CLOSE", index: i, value: str[i++] });
+      continue;
+    }
+    if (char === ":") {
+      var name = "";
+      var j = i + 1;
+      while (j < str.length) {
+        var code = str.charCodeAt(j);
+        if (
+          // `0-9`
+          code >= 48 && code <= 57 || // `A-Z`
+          code >= 65 && code <= 90 || // `a-z`
+          code >= 97 && code <= 122 || // `_`
+          code === 95
+        ) {
+          name += str[j++];
+          continue;
+        }
+        break;
+      }
+      if (!name)
+        throw new TypeError("Missing parameter name at ".concat(i));
+      tokens.push({ type: "NAME", index: i, value: name });
+      i = j;
+      continue;
+    }
+    if (char === "(") {
+      var count = 1;
+      var pattern = "";
+      var j = i + 1;
+      if (str[j] === "?") {
+        throw new TypeError('Pattern cannot start with "?" at '.concat(j));
+      }
+      while (j < str.length) {
+        if (str[j] === "\\") {
+          pattern += str[j++] + str[j++];
+          continue;
+        }
+        if (str[j] === ")") {
+          count--;
+          if (count === 0) {
+            j++;
+            break;
+          }
+        } else if (str[j] === "(") {
+          count++;
+          if (str[j + 1] !== "?") {
+            throw new TypeError("Capturing groups are not allowed at ".concat(j));
+          }
+        }
+        pattern += str[j++];
+      }
+      if (count)
+        throw new TypeError("Unbalanced pattern at ".concat(i));
+      if (!pattern)
+        throw new TypeError("Missing pattern at ".concat(i));
+      tokens.push({ type: "PATTERN", index: i, value: pattern });
+      i = j;
+      continue;
+    }
+    tokens.push({ type: "CHAR", index: i, value: str[i++] });
+  }
+  tokens.push({ type: "END", index: i, value: "" });
+  return tokens;
+}
+__name(lexer, "lexer");
+function parse3(str, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var tokens = lexer(str);
+  var _a = options.prefixes, prefixes = _a === void 0 ? "./" : _a, _b = options.delimiter, delimiter = _b === void 0 ? "/#?" : _b;
+  var result = [];
+  var key = 0;
+  var i = 0;
+  var path = "";
+  var tryConsume = /* @__PURE__ */ __name(function(type) {
+    if (i < tokens.length && tokens[i].type === type)
+      return tokens[i++].value;
+  }, "tryConsume");
+  var mustConsume = /* @__PURE__ */ __name(function(type) {
+    var value2 = tryConsume(type);
+    if (value2 !== void 0)
+      return value2;
+    var _a2 = tokens[i], nextType = _a2.type, index = _a2.index;
+    throw new TypeError("Unexpected ".concat(nextType, " at ").concat(index, ", expected ").concat(type));
+  }, "mustConsume");
+  var consumeText = /* @__PURE__ */ __name(function() {
+    var result2 = "";
+    var value2;
+    while (value2 = tryConsume("CHAR") || tryConsume("ESCAPED_CHAR")) {
+      result2 += value2;
+    }
+    return result2;
+  }, "consumeText");
+  var isSafe = /* @__PURE__ */ __name(function(value2) {
+    for (var _i = 0, delimiter_1 = delimiter; _i < delimiter_1.length; _i++) {
+      var char2 = delimiter_1[_i];
+      if (value2.indexOf(char2) > -1)
+        return true;
+    }
+    return false;
+  }, "isSafe");
+  var safePattern = /* @__PURE__ */ __name(function(prefix2) {
+    var prev = result[result.length - 1];
+    var prevText = prefix2 || (prev && typeof prev === "string" ? prev : "");
+    if (prev && !prevText) {
+      throw new TypeError('Must have text between two parameters, missing text after "'.concat(prev.name, '"'));
+    }
+    if (!prevText || isSafe(prevText))
+      return "[^".concat(escapeString(delimiter), "]+?");
+    return "(?:(?!".concat(escapeString(prevText), ")[^").concat(escapeString(delimiter), "])+?");
+  }, "safePattern");
+  while (i < tokens.length) {
+    var char = tryConsume("CHAR");
+    var name = tryConsume("NAME");
+    var pattern = tryConsume("PATTERN");
+    if (name || pattern) {
+      var prefix = char || "";
+      if (prefixes.indexOf(prefix) === -1) {
+        path += prefix;
+        prefix = "";
+      }
+      if (path) {
+        result.push(path);
+        path = "";
+      }
+      result.push({
+        name: name || key++,
+        prefix,
+        suffix: "",
+        pattern: pattern || safePattern(prefix),
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    var value = char || tryConsume("ESCAPED_CHAR");
+    if (value) {
+      path += value;
+      continue;
+    }
+    if (path) {
+      result.push(path);
+      path = "";
+    }
+    var open = tryConsume("OPEN");
+    if (open) {
+      var prefix = consumeText();
+      var name_1 = tryConsume("NAME") || "";
+      var pattern_1 = tryConsume("PATTERN") || "";
+      var suffix = consumeText();
+      mustConsume("CLOSE");
+      result.push({
+        name: name_1 || (pattern_1 ? key++ : ""),
+        pattern: name_1 && !pattern_1 ? safePattern(prefix) : pattern_1,
+        prefix,
+        suffix,
+        modifier: tryConsume("MODIFIER") || ""
+      });
+      continue;
+    }
+    mustConsume("END");
+  }
+  return result;
+}
+__name(parse3, "parse");
+function match(str, options) {
+  var keys = [];
+  var re = pathToRegexp(str, keys, options);
+  return regexpToFunction(re, keys, options);
+}
+__name(match, "match");
+function regexpToFunction(re, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.decode, decode = _a === void 0 ? function(x) {
+    return x;
+  } : _a;
+  return function(pathname) {
+    var m = re.exec(pathname);
+    if (!m)
+      return false;
+    var path = m[0], index = m.index;
+    var params = /* @__PURE__ */ Object.create(null);
+    var _loop_1 = /* @__PURE__ */ __name(function(i2) {
+      if (m[i2] === void 0)
+        return "continue";
+      var key = keys[i2 - 1];
+      if (key.modifier === "*" || key.modifier === "+") {
+        params[key.name] = m[i2].split(key.prefix + key.suffix).map(function(value) {
+          return decode(value, key);
+        });
+      } else {
+        params[key.name] = decode(m[i2], key);
+      }
+    }, "_loop_1");
+    for (var i = 1; i < m.length; i++) {
+      _loop_1(i);
+    }
+    return { path, index, params };
+  };
+}
+__name(regexpToFunction, "regexpToFunction");
+function escapeString(str) {
+  return str.replace(/([.+*?=^!:${}()[\]|/\\])/g, "\\$1");
+}
+__name(escapeString, "escapeString");
+function flags(options) {
+  return options && options.sensitive ? "" : "i";
+}
+__name(flags, "flags");
+function regexpToRegexp(path, keys) {
+  if (!keys)
+    return path;
+  var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+  var index = 0;
+  var execResult = groupsRegex.exec(path.source);
+  while (execResult) {
+    keys.push({
+      // Use parenthesized substring match if available, index otherwise
+      name: execResult[1] || index++,
+      prefix: "",
+      suffix: "",
+      modifier: "",
+      pattern: ""
+    });
+    execResult = groupsRegex.exec(path.source);
+  }
+  return path;
+}
+__name(regexpToRegexp, "regexpToRegexp");
+function arrayToRegexp(paths, keys, options) {
+  var parts = paths.map(function(path) {
+    return pathToRegexp(path, keys, options).source;
+  });
+  return new RegExp("(?:".concat(parts.join("|"), ")"), flags(options));
+}
+__name(arrayToRegexp, "arrayToRegexp");
+function stringToRegexp(path, keys, options) {
+  return tokensToRegexp(parse3(path, options), keys, options);
+}
+__name(stringToRegexp, "stringToRegexp");
+function tokensToRegexp(tokens, keys, options) {
+  if (options === void 0) {
+    options = {};
+  }
+  var _a = options.strict, strict = _a === void 0 ? false : _a, _b = options.start, start = _b === void 0 ? true : _b, _c = options.end, end = _c === void 0 ? true : _c, _d = options.encode, encode = _d === void 0 ? function(x) {
+    return x;
+  } : _d, _e = options.delimiter, delimiter = _e === void 0 ? "/#?" : _e, _f = options.endsWith, endsWith = _f === void 0 ? "" : _f;
+  var endsWithRe = "[".concat(escapeString(endsWith), "]|$");
+  var delimiterRe = "[".concat(escapeString(delimiter), "]");
+  var route = start ? "^" : "";
+  for (var _i = 0, tokens_1 = tokens; _i < tokens_1.length; _i++) {
+    var token = tokens_1[_i];
+    if (typeof token === "string") {
+      route += escapeString(encode(token));
+    } else {
+      var prefix = escapeString(encode(token.prefix));
+      var suffix = escapeString(encode(token.suffix));
+      if (token.pattern) {
+        if (keys)
+          keys.push(token);
+        if (prefix || suffix) {
+          if (token.modifier === "+" || token.modifier === "*") {
+            var mod = token.modifier === "*" ? "?" : "";
+            route += "(?:".concat(prefix, "((?:").concat(token.pattern, ")(?:").concat(suffix).concat(prefix, "(?:").concat(token.pattern, "))*)").concat(suffix, ")").concat(mod);
+          } else {
+            route += "(?:".concat(prefix, "(").concat(token.pattern, ")").concat(suffix, ")").concat(token.modifier);
+          }
+        } else {
+          if (token.modifier === "+" || token.modifier === "*") {
+            throw new TypeError('Can not repeat "'.concat(token.name, '" without a prefix and suffix'));
+          }
+          route += "(".concat(token.pattern, ")").concat(token.modifier);
+        }
+      } else {
+        route += "(?:".concat(prefix).concat(suffix, ")").concat(token.modifier);
+      }
+    }
+  }
+  if (end) {
+    if (!strict)
+      route += "".concat(delimiterRe, "?");
+    route += !options.endsWith ? "$" : "(?=".concat(endsWithRe, ")");
+  } else {
+    var endToken = tokens[tokens.length - 1];
+    var isEndDelimited = typeof endToken === "string" ? delimiterRe.indexOf(endToken[endToken.length - 1]) > -1 : endToken === void 0;
+    if (!strict) {
+      route += "(?:".concat(delimiterRe, "(?=").concat(endsWithRe, "))?");
+    }
+    if (!isEndDelimited) {
+      route += "(?=".concat(delimiterRe, "|").concat(endsWithRe, ")");
+    }
+  }
+  return new RegExp(route, flags(options));
+}
+__name(tokensToRegexp, "tokensToRegexp");
+function pathToRegexp(path, keys, options) {
+  if (path instanceof RegExp)
+    return regexpToRegexp(path, keys);
+  if (Array.isArray(path))
+    return arrayToRegexp(path, keys, options);
+  return stringToRegexp(path, keys, options);
+}
+__name(pathToRegexp, "pathToRegexp");
+
+// ../../../../../AppData/Roaming/npm/node_modules/wrangler/templates/pages-template-worker.ts
+var escapeRegex = /[.+?^${}()|[\]\\]/g;
+function* executeRequest(request) {
+  const requestPath = new URL(request.url).pathname;
+  for (const route of [...routes].reverse()) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult) {
+      for (const handler of route.middlewares.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: mountMatchResult.path
+        };
+      }
+    }
+  }
+  for (const route of routes) {
+    if (route.method && route.method !== request.method) {
+      continue;
+    }
+    const routeMatcher = match(route.routePath.replace(escapeRegex, "\\$&"), {
+      end: true
+    });
+    const mountMatcher = match(route.mountPath.replace(escapeRegex, "\\$&"), {
+      end: false
+    });
+    const matchResult = routeMatcher(requestPath);
+    const mountMatchResult = mountMatcher(requestPath);
+    if (matchResult && mountMatchResult && route.modules.length) {
+      for (const handler of route.modules.flat()) {
+        yield {
+          handler,
+          params: matchResult.params,
+          path: matchResult.path
+        };
+      }
+      break;
+    }
+  }
+}
+__name(executeRequest, "executeRequest");
+var pages_template_worker_default = {
+  async fetch(originalRequest, env, workerContext) {
+    let request = originalRequest;
+    const handlerIterator = executeRequest(request);
+    let data = {};
+    let isFailOpen = false;
+    const next = /* @__PURE__ */ __name(async (input, init) => {
+      if (input !== void 0) {
+        let url = input;
+        if (typeof input === "string") {
+          url = new URL(input, request.url).toString();
+        }
+        request = new Request(url, init);
+      }
+      const result = handlerIterator.next();
+      if (result.done === false) {
+        const { handler, params, path } = result.value;
+        const context = {
+          request: new Request(request.clone()),
+          functionPath: path,
+          next,
+          params,
+          get data() {
+            return data;
+          },
+          set data(value) {
+            if (typeof value !== "object" || value === null) {
+              throw new Error("context.data must be an object");
+            }
+            data = value;
+          },
+          env,
+          waitUntil: workerContext.waitUntil.bind(workerContext),
+          passThroughOnException: /* @__PURE__ */ __name(() => {
+            isFailOpen = true;
+          }, "passThroughOnException")
+        };
+        const response = await handler(context);
+        if (!(response instanceof Response)) {
+          throw new Error("Your Pages function should return a Response");
+        }
+        return cloneResponse(response);
+      } else if ("ASSETS") {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      } else {
+        const response = await fetch(request);
+        return cloneResponse(response);
+      }
+    }, "next");
+    try {
+      return await next();
+    } catch (error) {
+      if (isFailOpen) {
+        const response = await env["ASSETS"].fetch(request);
+        return cloneResponse(response);
+      }
+      throw error;
+    }
+  }
+};
+var cloneResponse = /* @__PURE__ */ __name((response) => (
+  // https://fetch.spec.whatwg.org/#null-body-status
+  new Response(
+    [101, 204, 205, 304].includes(response.status) ? null : response.body,
+    response
+  )
+), "cloneResponse");
+export {
+  pages_template_worker_default as default
+};
+
+------formdata-undici-027805525582--

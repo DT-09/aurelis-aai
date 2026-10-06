@@ -1,0 +1,77 @@
+{
+  "routes": [
+    {
+      "routePath": "/api/auth",
+      "mountPath": "/api",
+      "method": "GET",
+      "module": [
+        "api/auth.js:onRequestGet"
+      ]
+    },
+    {
+      "routePath": "/api/auth",
+      "mountPath": "/api",
+      "method": "POST",
+      "module": [
+        "api/auth.js:onRequestPost"
+      ]
+    },
+    {
+      "routePath": "/api/demo",
+      "mountPath": "/api",
+      "method": "GET",
+      "module": [
+        "api/demo.js:onRequestGet"
+      ]
+    },
+    {
+      "routePath": "/api/health",
+      "mountPath": "/api",
+      "method": "GET",
+      "module": [
+        "api/health.js:onRequestGet"
+      ]
+    },
+    {
+      "routePath": "/api/setup",
+      "mountPath": "/api",
+      "method": "POST",
+      "module": [
+        "api/setup.js:onRequestPost"
+      ]
+    },
+    {
+      "routePath": "/api/client",
+      "mountPath": "/api",
+      "method": "",
+      "module": [
+        "api/client.js:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/engine",
+      "mountPath": "/api",
+      "method": "",
+      "module": [
+        "api/engine.js:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/invite",
+      "mountPath": "/api",
+      "method": "",
+      "module": [
+        "api/invite.js:onRequest"
+      ]
+    },
+    {
+      "routePath": "/api/operator",
+      "mountPath": "/api",
+      "method": "",
+      "module": [
+        "api/operator.js:onRequest"
+      ]
+    }
+  ],
+  "baseURL": "/"
+}
