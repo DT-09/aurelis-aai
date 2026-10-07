@@ -5,7 +5,7 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "aurelis-aai"
-database_id = "PASTE_CORRECT_D1_UUID_HERE"
+database_id = "870cfa76-79c4-49f9-9bba-14441833b363"
 
 [vars]
 SESSION_TTL_SECONDS = "28800"
